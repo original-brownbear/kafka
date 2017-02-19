@@ -329,9 +329,9 @@ public class Selector implements Selectable {
                 idleExpiryManager.update(channel.id(), currentTimeNanos);
 
             try {
-
+                final int readyOps = key.readyOps();
                 /* complete any connections that have finished their handshake (either normally or immediately) */
-                if (isImmediatelyConnected || key.isConnectable()) {
+                if (isImmediatelyConnected || (readyOps & SelectionKey.OP_CONNECT) != 0) {
                     if (channel.finishConnect()) {
                         this.connected.add(channel.id());
                         this.sensors.connectionCreated.record();
@@ -350,14 +350,14 @@ public class Selector implements Selectable {
                     channel.prepare();
 
                 /* if channel is ready read from any connections that have readable data */
-                if (channel.ready() && key.isReadable() && !hasStagedReceive(channel)) {
+                if (channel.ready() && (readyOps & SelectionKey.OP_READ) != 0 && !hasStagedReceive(channel)) {
                     NetworkReceive networkReceive;
                     while ((networkReceive = channel.read()) != null)
                         addToStagedReceives(channel, networkReceive);
                 }
 
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
-                if (channel.ready() && key.isWritable()) {
+                if (channel.ready() && (readyOps & SelectionKey.OP_WRITE) != 0) {
                     Send send = channel.write();
                     if (send != null) {
                         this.completedSends.add(send);
