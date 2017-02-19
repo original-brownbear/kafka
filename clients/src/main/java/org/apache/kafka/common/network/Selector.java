@@ -349,15 +349,16 @@ public class Selector implements Selectable {
                 if (channel.isConnected() && !channel.ready())
                     channel.prepare();
 
+                final boolean ready = channel.ready();
                 /* if channel is ready read from any connections that have readable data */
-                if (channel.ready() && (readyOps & SelectionKey.OP_READ) != 0 && !hasStagedReceive(channel)) {
+                if (ready && (readyOps & SelectionKey.OP_READ) != 0 && !hasStagedReceive(channel)) {
                     NetworkReceive networkReceive;
                     while ((networkReceive = channel.read()) != null)
                         addToStagedReceives(channel, networkReceive);
                 }
 
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
-                if (channel.ready() && (readyOps & SelectionKey.OP_WRITE) != 0) {
+                if (ready && (readyOps & SelectionKey.OP_WRITE) != 0) {
                     Send send = channel.write();
                     if (send != null) {
                         this.completedSends.add(send);
