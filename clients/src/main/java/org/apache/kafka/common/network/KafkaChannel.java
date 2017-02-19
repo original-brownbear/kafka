@@ -151,7 +151,7 @@ public class KafkaChannel {
             receive = new NetworkReceive(this.sizeBuffer, maxReceiveSize, id);
         }
 
-        receive(receive);
+        receive.readFrom(transportLayer);
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
@@ -167,10 +167,6 @@ public class KafkaChannel {
             send = null;
         }
         return result;
-    }
-
-    private long receive(NetworkReceive receive) throws IOException {
-        return receive.readFrom(transportLayer);
     }
 
     private boolean send(Send send) throws IOException {
