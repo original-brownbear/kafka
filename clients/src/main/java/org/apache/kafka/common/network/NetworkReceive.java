@@ -33,23 +33,26 @@ public class NetworkReceive implements Receive {
 
 
     public NetworkReceive(String source, ByteBuffer buffer) {
-        this.source = source;
-        this.buffer = buffer;
-        this.size = null;
-        this.maxSize = UNLIMITED;
+        this(null, UNLIMITED, source, buffer);
     }
 
     public NetworkReceive(String source) {
-        this.source = source;
-        this.size = ByteBuffer.allocate(4);
-        this.buffer = null;
-        this.maxSize = UNLIMITED;
+        this(UNLIMITED, source);
     }
 
     public NetworkReceive(int maxSize, String source) {
+        this(ByteBuffer.allocate(4), maxSize, source);
+    }
+
+    public NetworkReceive(final ByteBuffer size, int maxSize, String source) {
+        this(size, maxSize, source, null);
+    }
+
+    private NetworkReceive(final ByteBuffer size, int maxSize, String source,
+        ByteBuffer buffer) {
         this.source = source;
-        this.size = ByteBuffer.allocate(4);
-        this.buffer = null;
+        this.size = size;
+        this.buffer = buffer;
         this.maxSize = maxSize;
     }
 
@@ -64,7 +67,7 @@ public class NetworkReceive implements Receive {
 
     @Override
     public boolean complete() {
-        return !size.hasRemaining() && !buffer.hasRemaining();
+        return buffer != null && !buffer.hasRemaining();
     }
 
     public long readFrom(ScatteringByteChannel channel) throws IOException {
@@ -83,8 +86,7 @@ public class NetworkReceive implements Receive {
                 throw new EOFException();
             read += bytesRead;
             if (!size.hasRemaining()) {
-                size.rewind();
-                int receiveSize = size.getInt();
+                int receiveSize = size.getInt(0);
                 if (receiveSize < 0)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + ")");
                 if (maxSize != UNLIMITED && receiveSize > maxSize)

@@ -22,6 +22,7 @@ import java.io.IOException;
 
 import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
 import java.security.Principal;
@@ -33,6 +34,7 @@ public class KafkaChannel {
     private final TransportLayer transportLayer;
     private final Authenticator authenticator;
     private final int maxReceiveSize;
+    private final ByteBuffer sizeBuffer;
     private NetworkReceive receive;
     private Send send;
     // Track connection and mute state of channels to enable outstanding requests on channels to be
@@ -45,6 +47,7 @@ public class KafkaChannel {
         this.transportLayer = transportLayer;
         this.authenticator = authenticator;
         this.maxReceiveSize = maxReceiveSize;
+        this.sizeBuffer = ByteBuffer.allocate(4);
         this.disconnected = false;
         this.muted = false;
     }
@@ -144,7 +147,8 @@ public class KafkaChannel {
         NetworkReceive result = null;
 
         if (receive == null) {
-            receive = new NetworkReceive(maxReceiveSize, id);
+            this.sizeBuffer.clear();
+            receive = new NetworkReceive(this.sizeBuffer, maxReceiveSize, id);
         }
 
         receive(receive);
