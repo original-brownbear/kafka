@@ -95,6 +95,7 @@ class BlockingChannel( val host: String,
       swallow(channel.close())
       channel = null
       selector = null
+      selectKey = null
     }
     connected = false
   }
@@ -108,13 +109,13 @@ class BlockingChannel( val host: String,
     val send = new RequestOrResponseSend(connectionId, request)
     var totalWritten = 0L
     if (!send.completed()) {
-      this.selectKey.interestOps(SelectionKey.OP_WRITE)
+      selectKey.interestOps(SelectionKey.OP_WRITE)
       while (!send.completed()) {
-        if (this.selectKey.isWritable || this.selector.select(readTimeoutMs) > 0) {
+        if (selectKey.isWritable || selector.select(readTimeoutMs) > 0) {
           totalWritten += send.write(channel)
         }
       }
-      this.selectKey.interestOps(SelectionKey.OP_READ)
+      selectKey.interestOps(SelectionKey.OP_READ)
     }
     totalWritten
   }
