@@ -17,7 +17,7 @@
 
 package kafka.network
 
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, StandardSocketOptions}
 import java.nio.channels._
 
 import kafka.api.RequestOrResponse
@@ -58,9 +58,9 @@ class BlockingChannel( val host: String,
           channel.socket.setSendBufferSize(writeBufferSize)
         channel.configureBlocking(false)
         selectKey = channel.register(selector, SelectionKey.OP_CONNECT)
-        channel.socket.setKeepAlive(true)
-        channel.socket.setTcpNoDelay(true)
-        channel.connect(new InetSocketAddress(host, port))
+        channel.setOption[java.lang.Boolean](StandardSocketOptions.SO_KEEPALIVE, true)
+          .setOption[java.lang.Boolean](StandardSocketOptions.TCP_NODELAY, true)
+          .connect(new InetSocketAddress(host, port))
         selector.select(connectTimeoutMs)
         if (!channel.finishConnect()) {
           import java.net.SocketTimeoutException
@@ -124,13 +124,13 @@ class BlockingChannel( val host: String,
     if(!connected)
       throw new ClosedChannelException()
 
-    val response = readCompletely(channel)
+    val response = readCompletely()
     response.payload().rewind()
 
     response
   }
 
-  private def readCompletely(channel: ReadableByteChannel): NetworkReceive = {
+  private def readCompletely(): NetworkReceive = {
     val response = new NetworkReceive
     while (!response.complete()) {
       if (selectKey.isReadable || selector.select(readTimeoutMs) > 0) {
