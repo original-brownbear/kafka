@@ -44,14 +44,10 @@ class RequestOrResponseSend(val dest: String, val buffer: ByteBuffer) extends Ne
     this(dest, RequestOrResponseSend.serialize(request))
   }
 
-  def writeCompletely(channel: GatheringByteChannel): Long = {
-    var totalWritten = 0L
-    while(!completed()) {
-      val written = writeTo(channel)
-      trace(written + " bytes written.")
-      totalWritten += written
-    }
-    totalWritten
+  def write(channel: GatheringByteChannel): Long = {
+    val written = writeTo(channel)
+    trace(written + " bytes written.")
+    written
   }
 
 }

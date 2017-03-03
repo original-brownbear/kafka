@@ -34,14 +34,16 @@ object BlockingChannel{
  *
  */
 @nonthreadsafe
-class BlockingChannel( val host: String, 
-                       val port: Int, 
-                       val readBufferSize: Int, 
-                       val writeBufferSize: Int, 
+class BlockingChannel( val host: String,
+                       val port: Int,
+                       val readBufferSize: Int,
+                       val writeBufferSize: Int,
                        val readTimeoutMs: Int ) extends Logging {
+  private val selector = Selector.open()
   private var connected = false
+  private var selectKey: SelectionKey = null
   private var channel: SocketChannel = null
-  private var readChannel: ReadableByteChannel = null
+  private var readChannel: SocketChannel = null
   private var writeChannel: GatheringByteChannel = null
   private val lock = new Object()
   private val connectTimeoutMs = readTimeoutMs
@@ -55,16 +57,21 @@ class BlockingChannel( val host: String,
           channel.socket.setReceiveBufferSize(readBufferSize)
         if(writeBufferSize > 0)
           channel.socket.setSendBufferSize(writeBufferSize)
-        channel.configureBlocking(true)
-        channel.socket.setSoTimeout(readTimeoutMs)
+        channel.configureBlocking(false)
+        selectKey = channel.register(selector, SelectionKey.OP_CONNECT)
         channel.socket.setKeepAlive(true)
         channel.socket.setTcpNoDelay(true)
-        channel.socket.connect(new InetSocketAddress(host, port), connectTimeoutMs)
-
+        channel.connect(new InetSocketAddress(host, port))
+        selector.select(connectTimeoutMs)
+        if (!channel.finishConnect()) {
+          import java.net.SocketTimeoutException
+          throw new SocketTimeoutException()
+        }
+        selectKey.interestOps(SelectionKey.OP_READ)
         writeChannel = channel
         // Need to create a new ReadableByteChannel from input stream because SocketChannel doesn't implement read with timeout
         // See: http://stackoverflow.com/questions/2866557/timeout-for-socketchannel-doesnt-work
-        readChannel = Channels.newChannel(channel.socket().getInputStream)
+        readChannel = channel
         connected = true
         val localHost = channel.socket.getLocalAddress.getHostAddress
         val localPort = channel.socket.getLocalPort
@@ -75,7 +82,7 @@ class BlockingChannel( val host: String,
         val msg = "Created socket with SO_TIMEOUT = %d (requested %d), SO_RCVBUF = %d (requested %d), SO_SNDBUF = %d (requested %d), connectTimeoutMs = %d."
         debug(msg.format(channel.socket.getSoTimeout,
                          readTimeoutMs,
-                         channel.socket.getReceiveBufferSize, 
+                         channel.socket.getReceiveBufferSize,
                          readBufferSize,
                          channel.socket.getSendBufferSize,
                          writeBufferSize,
@@ -86,8 +93,9 @@ class BlockingChannel( val host: String,
       }
     }
   }
-  
+
   def disconnect() = lock synchronized {
+    swallow(selector.close())
     if(channel != null) {
       swallow(channel.close())
       swallow(channel.socket.close())
@@ -110,9 +118,18 @@ class BlockingChannel( val host: String,
       throw new ClosedChannelException()
 
     val send = new RequestOrResponseSend(connectionId, request)
-    send.writeCompletely(writeChannel)
+    var totalWritten = 0L
+    if (!send.completed()) {
+      this.selectKey.interestOps(SelectionKey.OP_WRITE)
+      while (!send.completed()) {
+        this.selector.select()
+        totalWritten += send.write(writeChannel)
+      }
+      this.selectKey.interestOps(SelectionKey.OP_READ)
+    }
+    totalWritten
   }
-  
+
   def receive(): NetworkReceive = {
     if(!connected)
       throw new ClosedChannelException()
@@ -125,8 +142,15 @@ class BlockingChannel( val host: String,
 
   private def readCompletely(channel: ReadableByteChannel): NetworkReceive = {
     val response = new NetworkReceive
-    while (!response.complete())
-      response.readFromReadableChannel(channel)
+    while (!response.complete()) {
+      selector.select(readTimeoutMs)
+      if (selector.selectedKeys().isEmpty) {
+        import java.net.SocketTimeoutException
+        throw new SocketTimeoutException()
+      } else {
+        response.readFromReadableChannel(channel)
+      }
+    }
     response
   }
 
