@@ -43,16 +43,14 @@ class BlockingChannel( val host: String,
   private var connected = false
   private var selectKey: SelectionKey = null
   private var channel: SocketChannel = null
-  private var readChannel: SocketChannel = null
-  private var writeChannel: GatheringByteChannel = null
   private val lock = new Object()
   private val connectTimeoutMs = readTimeoutMs
   private var connectionId: String = ""
 
   def connect() = lock synchronized  {
     if(!connected) {
-      selector = Selector.open()
       try {
+        selector = Selector.open()
         channel = SocketChannel.open()
         if(readBufferSize > 0)
           channel.socket.setReceiveBufferSize(readBufferSize)
@@ -69,8 +67,6 @@ class BlockingChannel( val host: String,
           throw new SocketTimeoutException()
         }
         selectKey.interestOps(SelectionKey.OP_READ)
-        writeChannel = channel
-        readChannel = channel
         connected = true
         val localHost = channel.socket.getLocalAddress.getHostAddress
         val localPort = channel.socket.getLocalPort
@@ -98,14 +94,7 @@ class BlockingChannel( val host: String,
       swallow(selector.close())
       swallow(channel.close())
       channel = null
-      writeChannel = null
       selector = null
-    }
-    // closing the main socket channel *should* close the read channel
-    // but let's do it to be sure.
-    if(readChannel != null) {
-      swallow(readChannel.close())
-      readChannel = null
     }
     connected = false
   }
@@ -122,7 +111,7 @@ class BlockingChannel( val host: String,
       this.selectKey.interestOps(SelectionKey.OP_WRITE)
       while (!send.completed()) {
         if (this.selectKey.isWritable || this.selector.select(readTimeoutMs) > 0) {
-          totalWritten += send.write(writeChannel)
+          totalWritten += send.write(channel)
         }
       }
       this.selectKey.interestOps(SelectionKey.OP_READ)
@@ -134,7 +123,7 @@ class BlockingChannel( val host: String,
     if(!connected)
       throw new ClosedChannelException()
 
-    val response = readCompletely(readChannel)
+    val response = readCompletely(channel)
     response.payload().rewind()
 
     response
