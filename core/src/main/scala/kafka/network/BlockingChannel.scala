@@ -39,7 +39,7 @@ class BlockingChannel( val host: String,
                        val readBufferSize: Int,
                        val writeBufferSize: Int,
                        val readTimeoutMs: Int ) extends Logging {
-  private val selector = Selector.open()
+  private var selector: Selector = null
   private var connected = false
   private var selectKey: SelectionKey = null
   private var channel: SocketChannel = null
@@ -51,6 +51,7 @@ class BlockingChannel( val host: String,
 
   def connect() = lock synchronized  {
     if(!connected) {
+      selector = Selector.open()
       try {
         channel = SocketChannel.open()
         if(readBufferSize > 0)
@@ -69,8 +70,6 @@ class BlockingChannel( val host: String,
         }
         selectKey.interestOps(SelectionKey.OP_READ)
         writeChannel = channel
-        // Need to create a new ReadableByteChannel from input stream because SocketChannel doesn't implement read with timeout
-        // See: http://stackoverflow.com/questions/2866557/timeout-for-socketchannel-doesnt-work
         readChannel = channel
         connected = true
         val localHost = channel.socket.getLocalAddress.getHostAddress
@@ -95,12 +94,12 @@ class BlockingChannel( val host: String,
   }
 
   def disconnect() = lock synchronized {
-    swallow(selector.close())
     if(channel != null) {
+      swallow(selector.close())
       swallow(channel.close())
-      swallow(channel.socket.close())
       channel = null
       writeChannel = null
+      selector = null
     }
     // closing the main socket channel *should* close the read channel
     // but let's do it to be sure.
@@ -122,8 +121,9 @@ class BlockingChannel( val host: String,
     if (!send.completed()) {
       this.selectKey.interestOps(SelectionKey.OP_WRITE)
       while (!send.completed()) {
-        this.selector.select()
-        totalWritten += send.write(writeChannel)
+        if (this.selectKey.isWritable || this.selector.select(readTimeoutMs) > 0) {
+          totalWritten += send.write(writeChannel)
+        }
       }
       this.selectKey.interestOps(SelectionKey.OP_READ)
     }
@@ -143,12 +143,11 @@ class BlockingChannel( val host: String,
   private def readCompletely(channel: ReadableByteChannel): NetworkReceive = {
     val response = new NetworkReceive
     while (!response.complete()) {
-      selector.select(readTimeoutMs)
-      if (selector.selectedKeys().isEmpty) {
+      if (selectKey.isReadable || selector.select(readTimeoutMs) > 0) {
+        response.readFromReadableChannel(channel)
+      } else {
         import java.net.SocketTimeoutException
         throw new SocketTimeoutException()
-      } else {
-        response.readFromReadableChannel(channel)
       }
     }
     response
