@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.streams.integration;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -70,6 +71,8 @@ public class KStreamAggregationDedupIntegrationTest {
     public static final EmbeddedKafkaCluster CLUSTER =
         new EmbeddedKafkaCluster(NUM_BROKERS);
 
+    private static final AtomicBoolean LOCK = new AtomicBoolean(false);
+
     private final MockTime mockTime = CLUSTER.time;
     private static volatile int testNo = 0;
     private KStreamBuilder builder;
@@ -84,6 +87,9 @@ public class KStreamAggregationDedupIntegrationTest {
 
     @Before
     public void before() throws InterruptedException {
+        if (LOCK.getAndSet(true)) {
+            throw new IllegalStateException("Parallel Test Execution!");
+        }
         testNo++;
         builder = new KStreamBuilder();
         createTopics();
@@ -120,6 +126,7 @@ public class KStreamAggregationDedupIntegrationTest {
             kafkaStreams.close();
         }
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfiguration);
+        LOCK.set(false);
     }
 
 

@@ -16,6 +16,18 @@
  */
 package org.apache.kafka.streams.integration;
 
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import kafka.utils.MockTime;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -48,28 +60,15 @@ import org.apache.kafka.streams.state.ReadOnlySessionStore;
 import org.apache.kafka.test.IntegrationTest;
 import org.apache.kafka.test.MockKeyValueMapper;
 import org.apache.kafka.test.TestUtils;
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
 import org.junit.After;
+import static org.junit.Assert.assertFalse;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.assertFalse;
 
 @Category({IntegrationTest.class})
 public class KStreamAggregationIntegrationTest {
@@ -78,6 +77,8 @@ public class KStreamAggregationIntegrationTest {
     @ClassRule
     public static final EmbeddedKafkaCluster CLUSTER =
         new EmbeddedKafkaCluster(NUM_BROKERS);
+
+    private static final AtomicBoolean LOCK = new AtomicBoolean(false);
 
     private static volatile int testNo = 0;
     private final MockTime mockTime = CLUSTER.time;
@@ -95,6 +96,9 @@ public class KStreamAggregationIntegrationTest {
 
     @Before
     public void before() throws InterruptedException {
+        if (LOCK.getAndSet(true)) {
+            throw new IllegalStateException("Parallel Test Execution!");
+        }
         testNo++;
         builder = new KStreamBuilder();
         createTopics();
@@ -142,6 +146,7 @@ public class KStreamAggregationIntegrationTest {
             kafkaStreams.close();
         }
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfiguration);
+        LOCK.set(false);
     }
 
 

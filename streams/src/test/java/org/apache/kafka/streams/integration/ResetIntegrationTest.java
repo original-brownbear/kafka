@@ -16,6 +16,12 @@
  */
 package org.apache.kafka.streams.integration;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import kafka.admin.AdminClient;
 import kafka.server.KafkaConfig$;
 import kafka.tools.StreamsResetter;
@@ -43,21 +49,15 @@ import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.test.IntegrationTest;
 import org.apache.kafka.test.TestCondition;
 import org.apache.kafka.test.TestUtils;
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.MatcherAssert.assertThat;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Properties;
-import java.util.Set;
-
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Tests local state store and global application cleanup.
@@ -76,6 +76,8 @@ public class ResetIntegrationTest {
         props.put(KafkaConfig$.MODULE$.ConnectionsMaxIdleMsProp(), -1L);
         CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS, props);
     }
+
+    private static final AtomicBoolean LOCK = new AtomicBoolean(false);
 
     private static final String APP_ID = "cleanup-integration-test";
     private static final String INPUT_TOPIC = "inputTopic";
@@ -104,6 +106,9 @@ public class ResetIntegrationTest {
 
     @Before
     public void cleanup() throws Exception {
+        if (LOCK.getAndSet(true)) {
+            throw new IllegalStateException("Parallel Test Execution!");
+        }
         ++testNo;
 
         if (adminClient == null) {
@@ -124,6 +129,11 @@ public class ResetIntegrationTest {
         }
 
         prepareInputData();
+    }
+
+    @After
+    public void after() throws Exception {
+        LOCK.set(false);
     }
 
     @Test
