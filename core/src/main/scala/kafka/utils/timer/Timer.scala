@@ -123,7 +123,14 @@ class SystemTimer(executorName: String,
   def size: Int = taskCounter.get
 
   override def shutdown() {
-    taskExecutor.shutdown()
+    try {
+      taskExecutor.shutdown()
+      if (!taskExecutor.awaitTermination(2L, TimeUnit.MINUTES)) {
+        taskExecutor.shutdownNow()
+      }
+    } finally {
+      taskExecutor.shutdownNow()
+    }
   }
 
 }
